@@ -187,3 +187,16 @@ tbody tr:hover{background:#f8fafc;}
   .wrap{padding:20px;margin:0;border-radius:0;}
   .filters{flex-direction:column;}
 }
+.photo-action{
+    margin-top:12px;
+}
+
+.btn-blue{
+    background:#2563eb;
+    color:#fff;
+    border:none;
+}
+
+.btn-blue:hover{
+    background:#1d4ed8;
+}
