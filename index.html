@@ -87,7 +87,9 @@
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
-const snapshot = document.getElementById('snapshot');
+const btnAmbilFoto = document.getElementById('btnAmbilFoto');
+
+let fotoBase64 = "";
 const idInput = document.getElementById('idInput');
 const profileBox = document.getElementById('profileBox');
 const profileFoto = document.getElementById('profileFoto');
@@ -116,11 +118,39 @@ navigator.mediaDevices?.getUserMedia({video:true}).then(stream=>{
 });
 
 function ambilFoto(){
-  canvas.width = video.videoWidth || 320;
-  canvas.height = video.videoHeight || 240;
-  canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
-  return canvas.toDataURL('image/jpeg',0.7);
+
+    canvas.width = video.videoWidth || 320;
+    canvas.height = video.videoHeight || 240;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+
+    fotoBase64 = canvas.toDataURL("image/jpeg",0.8);
+
+    snapshot.src = fotoBase64;
+    snapshot.style.display = "block";
+    video.style.display = "none";
+
+    btnAmbilFoto.textContent = "🔄 Ambil Ulang";
+
+    return fotoBase64;
 }
+btnAmbilFoto.onclick = () => {
+
+    if(video.style.display === "none"){
+
+        snapshot.style.display = "none";
+        video.style.display = "block";
+
+        fotoBase64 = "";
+
+        btnAmbilFoto.textContent = "📷 Ambil Foto";
+
+        return;
+    }
+
+    ambilFoto();
+};
 
 // load opsi izin
 async function loadOpsiIzin(){
@@ -173,7 +203,13 @@ async function kirimAbsen(status, keterangan){
     return;
   }
   statusMsg.textContent = 'Mengirim...';
-  const foto = ambilFoto();
+  if(!fotoBase64){
+    statusMsg.innerHTML =
+    '<span class="status-err">Silakan ambil foto terlebih dahulu.</span>';
+    return;
+}
+
+const foto = fotoBase64;
   try{
     const res = await fetch(API_URL,{
       method:'POST',
@@ -195,6 +231,12 @@ async function kirimAbsen(status, keterangan){
       profileBox.style.display='none';
       izinWrap.style.display='none';
       currentPegawai = null;
+      fotoBase64 = "";
+
+snapshot.style.display = "none";
+video.style.display = "block";
+
+btnAmbilFoto.textContent = "📷 Ambil Foto";
     } else {
       statusMsg.innerHTML = '<span class="status-err">Gagal: '+json.error+'</span>';
     }
