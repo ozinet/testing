@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mesin Absensi — BPBD Provinsi Kalimantan Selatan</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .clock{text-align:center;font-size:38px;font-weight:800;color:var(--navy);margin:6px 0 0;}
+  .date{text-align:center;color:var(--muted);font-size:13px;margin-bottom:20px;}
+  .cam-wrap{
+    position:relative;width:100%;max-width:360px;aspect-ratio:4/3;
+    margin:0 auto;border-radius:16px;overflow:hidden;background:#0f2647;
+  }
+  #video,#snapshot{width:100%;height:100%;object-fit:cover;display:block;}
+  #snapshot{display:none;position:absolute;top:0;left:0;}
+  .profile-box{
+    display:flex;gap:14px;align-items:center;
+    background:#f6f8fb;border-radius:12px;padding:14px 16px;margin-top:16px;
+  }
+  .profile-box img{width:56px;height:56px;border-radius:10px;object-fit:cover;background:#dfe5ec;}
+  .profile-box .meta strong{display:block;color:var(--navy);font-size:15px;}
+  .profile-box .meta span{color:var(--muted);font-size:12px;}
+  .action-row{display:flex;gap:12px;margin-top:16px;}
+  .action-row .btn{flex:1;padding:16px;font-size:15px;}
+  .status-msg{text-align:center;font-size:13px;margin-top:12px;min-height:18px;}
+  .status-ok{color:var(--green);font-weight:700;}
+  .status-err{color:var(--red);font-weight:700;}
+  .link-admin{display:block;text-align:center;margin-top:22px;color:var(--muted);font-size:12px;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="wrap" style="max-width:460px;">
+  <div class="header">
+    <div class="logos">🛡️🔺</div>
+    <h1>MESIN ABSENSI</h1>
+    <h2>BPBD PROVINSI KALIMANTAN SELATAN</h2>
+  </div>
+
+  <div class="clock" id="clock">--:--:--</div>
+  <div class="date" id="dateNow">-</div>
+
+  <div class="cam-wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <img id="snapshot" alt="foto absen">
+  </div>
+  <canvas id="canvas" style="display:none;"></canvas>
+
+  <label>ID Pegawai</label>
+  <input type="text" id="idInput" placeholder="Masukkan ID / Nomor Registrasi" inputmode="numeric">
+
+  <div class="profile-box" id="profileBox" style="display:none;">
+    <img id="profileFoto" src="">
+    <div class="meta">
+      <strong id="profileNama">-</strong>
+      <span id="profileJabatan">-</span>
+    </div>
+  </div>
+
+  <div id="izinWrap" style="display:none;">
+    <label>Alasan Izin</label>
+    <select id="izinSelect"></select>
+  </div>
+
+  <div class="action-row">
+    <button class="btn btn-green" id="btnMasuk">MASUK</button>
+    <button class="btn btn-red" id="btnKeluar">KELUAR</button>
+  </div>
+  <button class="btn btn-orange btn-block" id="btnIzin">AJUKAN IZIN</button>
+
+  <div class="status-msg" id="statusMsg"></div>
+
+  <a href="admin.html" class="link-admin">⚙ Panel Manajemen Database</a>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const snapshot = document.getElementById('snapshot');
+const idInput = document.getElementById('idInput');
+const profileBox = document.getElementById('profileBox');
+const profileFoto = document.getElementById('profileFoto');
+const profileNama = document.getElementById('profileNama');
+const profileJabatan = document.getElementById('profileJabatan');
+const izinWrap = document.getElementById('izinWrap');
+const izinSelect = document.getElementById('izinSelect');
+const statusMsg = document.getElementById('statusMsg');
+
+let currentPegawai = null;
+let modeIzin = false;
+
+// jam realtime
+function tick(){
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString('id-ID');
+  document.getElementById('dateNow').textContent = now.toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+}
+setInterval(tick,1000); tick();
+
+// kamera
+navigator.mediaDevices?.getUserMedia({video:true}).then(stream=>{
+  video.srcObject = stream;
+}).catch(()=>{
+  statusMsg.innerHTML = '<span class="status-err">Kamera tidak tersedia / izin ditolak</span>';
+});
+
+function ambilFoto(){
+  canvas.width = video.videoWidth || 320;
+  canvas.height = video.videoHeight || 240;
+  canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
+  return canvas.toDataURL('image/jpeg',0.7);
+}
+
+// load opsi izin
+async function loadOpsiIzin(){
+  try{
+    const res = await fetch(`${API_URL}?action=getOpsiIzin`);
+    const json = await res.json();
+    izinSelect.innerHTML = '';
+    (json.data||[]).forEach(o=>{
+      const opt = document.createElement('option');
+      opt.value = o.Teks; opt.textContent = o.Teks;
+      izinSelect.appendChild(opt);
+    });
+  }catch(e){ /* silent */ }
+}
+loadOpsiIzin();
+
+// cari pegawai saat ID diketik
+let debounceT;
+idInput.addEventListener('input',()=>{
+  clearTimeout(debounceT);
+  debounceT = setTimeout(cariPegawai,400);
+});
+
+async function cariPegawai(){
+  const id = idInput.value.trim();
+  currentPegawai = null;
+  profileBox.style.display = 'none';
+  if(!id) return;
+  try{
+    const res = await fetch(`${API_URL}?action=cariPegawai&id=${encodeURIComponent(id)}`);
+    const json = await res.json();
+    if(json.ok && json.data){
+      currentPegawai = json.data;
+      profileFoto.src = json.data.FotoURL || 'https://placehold.co/56x56?text=%20';
+      profileNama.textContent = json.data.Nama;
+      profileJabatan.textContent = json.data.Jabatan || '';
+      profileBox.style.display = 'flex';
+      statusMsg.textContent = '';
+    } else {
+      statusMsg.innerHTML = '<span class="status-err">ID tidak ditemukan</span>';
+    }
+  }catch(e){
+    statusMsg.innerHTML = '<span class="status-err">Gagal menghubungi server</span>';
+  }
+}
+
+async function kirimAbsen(status, keterangan){
+  if(!currentPegawai){
+    statusMsg.innerHTML = '<span class="status-err">Cari & pilih pegawai dulu</span>';
+    return;
+  }
+  statusMsg.textContent = 'Mengirim...';
+  const foto = ambilFoto();
+  try{
+    const res = await fetch(API_URL,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({
+        action:'absen',
+        id: currentPegawai.ID,
+        nama: currentPegawai.Nama,
+        status: status,
+        keterangan: keterangan || '',
+        fotoBase64: foto
+      })
+    });
+    const json = await res.json();
+    if(json.ok){
+      statusMsg.innerHTML = `<span class="status-ok">Berhasil dicatat: ${status}</span>`;
+      showToast(`${currentPegawai.Nama} — ${status}`);
+      idInput.value = '';
+      profileBox.style.display='none';
+      izinWrap.style.display='none';
+      currentPegawai = null;
+    } else {
+      statusMsg.innerHTML = '<span class="status-err">Gagal: '+json.error+'</span>';
+    }
+  }catch(e){
+    statusMsg.innerHTML = '<span class="status-err">Gagal mengirim data</span>';
+  }
+}
+
+document.getElementById('btnMasuk').onclick = ()=>kirimAbsen('MASUK','');
+document.getElementById('btnKeluar').onclick = ()=>kirimAbsen('KELUAR','');
+document.getElementById('btnIzin').onclick = ()=>{
+  if(!modeIzin){
+    izinWrap.style.display='block';
+    modeIzin = true;
+    return;
+  }
+  kirimAbsen('IZIN', izinSelect.value);
+  modeIzin = false;
+  izinWrap.style.display='none';
+};
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+</script>
+</body>
+</html>
