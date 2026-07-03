@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel Manajemen Database — BPBD Kalimantan Selatan</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="logos">🛡️🔺</div>
+    <h1>PANEL MANAJEMEN DATABASE</h1>
+    <h2>BPBD PROVINSI KALIMANTAN SELATAN</h2>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="pegawai">👤 PEGAWAI</button>
+    <button class="tab" data-tab="log">📄 LOG ABSENSI</button>
+    <button class="tab" data-tab="izin">⚙ LIST OPSI IZIN</button>
+  </div>
+
+  <!-- ===================== TAB PEGAWAI ===================== -->
+  <section id="tab-pegawai">
+    <label>ID Number / Nomor Registrasi</label>
+    <input type="text" id="pId" placeholder="Masukkan ID Pegawai">
+    <label>Nama Lengkap Pegawai</label>
+    <input type="text" id="pNama" placeholder="Masukkan Nama Lengkap">
+    <label>Jabatan</label>
+    <input type="text" id="pJabatan" placeholder="Masukkan Jabatan">
+    <label>Bidang / Divisi</label>
+    <input type="text" id="pBidang" placeholder="Masukkan Bidang Kerja">
+    <label>URL Foto Profil</label>
+    <input type="url" id="pFoto" placeholder="https://drive.google.com/...">
+    <button class="btn btn-blue btn-block" id="btnSavePegawai">📋 DAFTARKAN PEGAWAI</button>
+    <input type="hidden" id="pRow">
+
+    <div class="section-title">
+      📋 DATABASE PESERTA/PEGAWAI
+      <input type="text" id="searchPegawai" placeholder="Cari Pegawai..." style="max-width:220px;">
+      <span class="badge" id="countPegawai">0 ORANG</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Foto</th><th>ID Number</th><th>Nama Pegawai</th><th>Jabatan</th><th>Bidang</th><th>Aksi</th></tr></thead>
+        <tbody id="bodyPegawai"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="emptyPegawai" style="display:none;">Belum ada data pegawai.</div>
+  </section>
+
+  <!-- ===================== TAB LOG ABSENSI ===================== -->
+  <section id="tab-log" style="display:none;">
+    <div class="section-title">
+      📄 HISTORI RIWAYAT LOG ABSENSI MENDETAIL
+      <span class="badge" id="countLog">0 BARIS DITEMUKAN</span>
+    </div>
+    <div class="filters">
+      <input type="text" id="searchLog" placeholder="Ketik nama / ID pegawai...">
+      <select id="filterBulan"><option value="">-- Semua Bulan --</option></select>
+      <select id="filterTahun"><option value="">-- Semua Tahun --</option></select>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Hari / Tanggal</th><th>ID Pegawai</th><th>Nama Pegawai</th><th>Status</th><th>Foto</th></tr></thead>
+        <tbody id="bodyLog"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="emptyLog" style="display:none;">Belum ada log absensi.</div>
+  </section>
+
+  <!-- ===================== TAB OPSI IZIN ===================== -->
+  <section id="tab-izin" style="display:none;">
+    <label>Teks / Nama Alasan Pilihan Izin</label>
+    <input type="text" id="izinTeks" placeholder="Contoh: Cuti Melahirkan / Dinas Luar Kota">
+    <input type="hidden" id="izinRow">
+    <button class="btn btn-green btn-block" id="btnSaveIzin">➕ TAMBAHKAN OPSI IZIN</button>
+
+    <div class="section-title">
+      📋 DAFTAR DROPDOWN PILIHAN IZIN AKTIF
+      <span class="badge" id="countIzin">0 OPSI</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>No Baris</th><th>Pilihan Alasan Izin (Akan muncul di Mesin Absen)</th><th>Aksi</th></tr></thead>
+        <tbody id="bodyIzin"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="emptyIzin" style="display:none;">Belum ada opsi izin.</div>
+
+    <a href="index.html" class="btn btn-outline btn-block" style="margin-top:18px;text-decoration:none;">← KEMBALI KE MESIN ABSENSI</a>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script>
+const toastEl = document.getElementById('toast');
+function showToast(msg){ toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'),2200); }
+
+// -------- TAB SWITCH --------
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    ['pegawai','log','izin'].forEach(t=>{
+      document.getElementById('tab-'+t).style.display = (t===btn.dataset.tab)?'block':'none';
+    });
+  };
+});
+
+// ================= PEGAWAI =================
+let pegawaiCache = [];
+async function loadPegawai(){
+  document.getElementById('bodyPegawai').innerHTML = '<tr><td colspan="6" class="loading">Memuat data...</td></tr>';
+  try{
+    const res = await fetch(`${API_URL}?action=getPegawai`);
+    const json = await res.json();
+    pegawaiCache = json.data || [];
+    renderPegawai();
+  }catch(e){
+    document.getElementById('bodyPegawai').innerHTML = '<tr><td colspan="6" class="loading">Gagal memuat data. Cek API_URL di config.js</td></tr>';
+  }
+}
+function renderPegawai(){
+  const q = document.getElementById('searchPegawai').value.toLowerCase();
+  const list = pegawaiCache.filter(p => String(p.Nama).toLowerCase().includes(q) || String(p.ID).toLowerCase().includes(q));
+  const body = document.getElementById('bodyPegawai');
+  document.getElementById('countPegawai').textContent = pegawaiCache.length + ' ORANG';
+  document.getElementById('emptyPegawai').style.display = list.length? 'none':'block';
+  body.innerHTML = list.map(p=>`
+    <tr>
+      <td><img class="avatar" src="${p.FotoURL||'https://placehold.co/38x38?text=%20'}"></td>
+      <td>${p.ID}</td>
+      <td class="name-strong">${p.Nama}<br><span style="font-weight:400;color:var(--muted);font-size:12px;">${p.Jabatan||''}</span></td>
+      <td>${p.Jabatan||''}</td>
+      <td>${p.Bidang||''}</td>
+      <td>
+        <button class="btn btn-orange" onclick='editPegawai(${p._row})'>✏ Edit</button>
+        <button class="btn btn-red" onclick='hapusPegawai(${p._row})'>🗑 Hapus</button>
+      </td>
+    </tr>`).join('');
+}
+document.getElementById('searchPegawai').addEventListener('input', renderPegawai);
+
+function editPegawai(row){
+  const p = pegawaiCache.find(x=>x._row===row);
+  if(!p) return;
+  document.getElementById('pRow').value = row;
+  document.getElementById('pId').value = p.ID;
+  document.getElementById('pNama').value = p.Nama;
+  document.getElementById('pJabatan').value = p.Jabatan;
+  document.getElementById('pBidang').value = p.Bidang;
+  document.getElementById('pFoto').value = p.FotoURL;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function hapusPegawai(row){
+  if(!confirm('Hapus pegawai ini?')) return;
+  await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action:'deletePegawai', row})});
+  showToast('Pegawai dihapus');
+  loadPegawai();
+}
+
+document.getElementById('btnSavePegawai').onclick = async ()=>{
+  const id = document.getElementById('pId').value.trim();
+  const nama = document.getElementById('pNama').value.trim();
+  if(!id || !nama){ showToast('ID dan Nama wajib diisi'); return; }
+  const row = document.getElementById('pRow').value;
+  const payload = {
+    action: row? 'updatePegawai':'addPegawai',
+    row: row? Number(row): undefined,
+    id, nama,
+    jabatan: document.getElementById('pJabatan').value.trim(),
+    bidang: document.getElementById('pBidang').value.trim(),
+    fotoUrl: document.getElementById('pFoto').value.trim()
+  };
+  await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body: JSON.stringify(payload)});
+  showToast(row? 'Data pegawai diperbarui':'Pegawai terdaftar');
+  ['pId','pNama','pJabatan','pBidang','pFoto','pRow'].forEach(id=>document.getElementById(id).value='');
+  loadPegawai();
+};
+
+// ================= LOG ABSENSI =================
+let logCache = [];
+async function loadLog(){
+  document.getElementById('bodyLog').innerHTML = '<tr><td colspan="5" class="loading">Memuat data...</td></tr>';
+  try{
+    const res = await fetch(`${API_URL}?action=getLog`);
+    const json = await res.json();
+    logCache = json.data || [];
+    isiFilterTanggal();
+    renderLog();
+  }catch(e){
+    document.getElementById('bodyLog').innerHTML = '<tr><td colspan="5" class="loading">Gagal memuat data. Cek API_URL di config.js</td></tr>';
+  }
+}
+function isiFilterTanggal(){
+  const bulanSel = document.getElementById('filterBulan');
+  const tahunSel = document.getElementById('filterTahun');
+  const bulanNama = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  const tahunSet = new Set();
+  logCache.forEach(l=>{ const d = new Date(l.Timestamp); if(!isNaN(d)) tahunSet.add(d.getFullYear()); });
+  if(bulanSel.options.length<=1){
+    bulanNama.forEach((b,i)=>{ const o=document.createElement('option'); o.value=i+1; o.textContent=b; bulanSel.appendChild(o); });
+  }
+  if(tahunSel.options.length<=1){
+    [...tahunSet].sort((a,b)=>b-a).forEach(y=>{ const o=document.createElement('option'); o.value=y; o.textContent=y; tahunSel.appendChild(o); });
+  }
+}
+function renderLog(){
+  const q = document.getElementById('searchLog').value.toLowerCase();
+  const bulan = document.getElementById('filterBulan').value;
+  const tahun = document.getElementById('filterTahun').value;
+  const list = logCache.filter(l=>{
+    const d = new Date(l.Timestamp);
+    if(bulan && (d.getMonth()+1) != bulan) return false;
+    if(tahun && d.getFullYear() != tahun) return false;
+    return String(l.Nama).toLowerCase().includes(q) || String(l.ID).toLowerCase().includes(q);
+  });
+  document.getElementById('countLog').textContent = list.length + ' BARIS DITEMUKAN';
+  document.getElementById('emptyLog').style.display = list.length? 'none':'block';
+  document.getElementById('bodyLog').innerHTML = list.map(l=>{
+    const d = new Date(l.Timestamp);
+    const tgl = isNaN(d)? l.Timestamp : d.toLocaleDateString('id-ID') + ' (' + d.toLocaleTimeString('id-ID') + ')';
+    const pillClass = l.Status==='MASUK'?'pill-in':(l.Status==='KELUAR'?'pill-out':'pill-izin');
+    return `<tr>
+      <td>${tgl}</td>
+      <td>${l.ID}</td>
+      <td class="name-strong">${l.Nama}</td>
+      <td><span class="pill ${pillClass}">${l.Status}</span>${l.Keterangan?`<br><span style="font-size:11px;color:var(--muted);">${l.Keterangan}</span>`:''}</td>
+      <td>${l.FotoAbsen? `<a href="${l.FotoAbsen}" target="_blank" class="btn btn-blue">🖼 Lihat</a>`:'-'}</td>
+    </tr>`;
+  }).join('');
+}
+document.getElementById('searchLog').addEventListener('input', renderLog);
+document.getElementById('filterBulan').addEventListener('change', renderLog);
+document.getElementById('filterTahun').addEventListener('change', renderLog);
+
+// ================= OPSI IZIN =================
+let izinCache = [];
+async function loadIzin(){
+  document.getElementById('bodyIzin').innerHTML = '<tr><td colspan="3" class="loading">Memuat data...</td></tr>';
+  try{
+    const res = await fetch(`${API_URL}?action=getOpsiIzin`);
+    const json = await res.json();
+    izinCache = json.data || [];
+    renderIzin();
+  }catch(e){
+    document.getElementById('bodyIzin').innerHTML = '<tr><td colspan="3" class="loading">Gagal memuat data. Cek API_URL di config.js</td></tr>';
+  }
+}
+function renderIzin(){
+  document.getElementById('countIzin').textContent = izinCache.length + ' OPSI';
+  document.getElementById('emptyIzin').style.display = izinCache.length? 'none':'block';
+  document.getElementById('bodyIzin').innerHTML = izinCache.map((o,i)=>`
+    <tr>
+      <td>Baris ${i+1}</td>
+      <td class="name-strong">${o.Teks}</td>
+      <td>
+        <button class="btn btn-orange" onclick='editIzin(${o._row})'>✏ Edit</button>
+        <button class="btn btn-red" onclick='hapusIzin(${o._row})'>🗑 Hapus</button>
+      </td>
+    </tr>`).join('');
+}
+function editIzin(row){
+  const o = izinCache.find(x=>x._row===row);
+  if(!o) return;
+  document.getElementById('izinRow').value = row;
+  document.getElementById('izinTeks').value = o.Teks;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+async function hapusIzin(row){
+  if(!confirm('Hapus opsi izin ini?')) return;
+  await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action:'deleteOpsiIzin', row})});
+  showToast('Opsi izin dihapus');
+  loadIzin();
+}
+document.getElementById('btnSaveIzin').onclick = async ()=>{
+  const teks = document.getElementById('izinTeks').value.trim();
+  if(!teks){ showToast('Teks izin wajib diisi'); return; }
+  const row = document.getElementById('izinRow').value;
+  const payload = { action: row? 'updateOpsiIzin':'addOpsiIzin', row: row? Number(row): undefined, teks };
+  await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body: JSON.stringify(payload)});
+  showToast(row? 'Opsi izin diperbarui':'Opsi izin ditambahkan');
+  document.getElementById('izinTeks').value=''; document.getElementById('izinRow').value='';
+  loadIzin();
+};
+
+// init
+loadPegawai();
+loadLog();
+loadIzin();
+</script>
+</body>
+</html>
